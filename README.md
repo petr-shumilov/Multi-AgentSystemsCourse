@@ -1,6 +1,6 @@
 # Multi-Agent Systems Course
 ## Task 1
-Let we have an undirected connected graph. Each node contains the integer value.
+Let we have an undirected connected graph. Each node contains the integer value.<br>
 **Required:** develop a system of agents based on the above graph and able to compute the arithmetic mean of all nodes values.
  
 ### Getting Started
