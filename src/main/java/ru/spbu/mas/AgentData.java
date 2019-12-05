@@ -1,15 +1,15 @@
 package ru.spbu.mas;
 
 class AgentData {
-    Integer value;
+    double value;
     Integer[] neighbors;
-    boolean isInitialAgent = false;
     Integer numberOfNodes;
+    NetworkConfiguration networkConfiguration;
 
-    AgentData(Integer value, Integer[] neighbors, Integer numberOfNodes, boolean isInitialAgent) {
+    AgentData(double value, Integer[] neighbors, Integer numberOfNodes, NetworkConfiguration networkConfiguration) {
         this.value = value;
         this.neighbors = neighbors;
         this.numberOfNodes = numberOfNodes;
-        this.isInitialAgent = isInitialAgent;
+        this.networkConfiguration = networkConfiguration;
     }
 }

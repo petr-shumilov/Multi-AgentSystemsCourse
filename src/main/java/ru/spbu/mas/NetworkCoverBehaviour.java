@@ -1,100 +1,127 @@
 package ru.spbu.mas;
 
-import jade.core.behaviours.CyclicBehaviour;
+import jade.core.behaviours.TickerBehaviour;
 import jade.lang.acl.ACLMessage;
 import jade.core.AID;
+import jade.wrapper.StaleProxyException;
+import java.text.DecimalFormat;
+import java.util.HashSet;
+import java.util.concurrent.TimeUnit;
 
-public class NetworkCoverBehaviour extends CyclicBehaviour {
-
+public class NetworkCoverBehaviour extends TickerBehaviour {
+    private int tick = 0;
+    private State state = State.SEND;
     private NetworkAgent agent;
 
     NetworkCoverBehaviour(NetworkAgent agent) {
-        super(agent);
+        super(agent, TimeUnit.SECONDS.toMillis(1));
+        this.setFixedPeriod(true);
         this.agent = agent;
     }
 
     @Override
-    public void action()
+    public void onTick()
     {
-        // Sync getting a message
-        ACLMessage msg = this.agent.blockingReceive();
+        tick++;
+        switch (state) {
+            case SEND:
+                Send();
+                this.state = State.RECEIVE;
+                break;
+            case RECEIVE:
+                Receive();
+                this.state = State.SEND;
+                break;
+            default:
+                block();
+        }
+    }
 
-        if (msg != null) {
-            /*
-              We are using performatives strictly not according to documents and standards.
-              At this case performatives useful for us exclusively as message type.
-              "REQUEST" is using for broadcast searching in depth of graph
-              "INFORM" is using for returning results of searching
-              This covering based on DFS
-             */
-            switch (msg.getPerformative()) {
-                case ACLMessage.REQUEST: {
-
-                    if (!this.agent.Used) {
-                        this.agent.Used = true;
-                        this.agent.RequesterName = msg.getSender().getLocalName();
-
-                        int willSendMessageCount = 0;
-                        // Sending a request neighbors
-                        ACLMessage requestMessage = new ACLMessage(ACLMessage.REQUEST);
-                        System.out.println(this.agent.getLocalName() + " is sending to neighbors: ");
-                        for (int i = 0; i < this.agent.AgentData.neighbors.length; ++i) {
-                            if (!this.agent.AgentData.neighbors[i].toString().equals(this.agent.RequesterName)) {
-                                requestMessage.addReceiver(new AID(this.agent.AgentData.neighbors[i].toString(), AID.ISLOCALNAME));
-                                System.out.println(this.agent.getLocalName() + " -> " + this.agent.AgentData.neighbors[i]);
-                                willSendMessageCount++;
-                            }
-                        }
-
-                        if (willSendMessageCount > 0) {
-                            this.agent.SentMessagesCount = willSendMessageCount;
-                            this.agent.send(requestMessage);
-                        }
-                        else {
-                            ACLMessage response = msg.createReply();
-                            response.setPerformative(ACLMessage.INFORM);
-                            response.setContent(this.agent.AgentData.value.toString());
-                            this.agent.send(response);
-                        }
-                    }
-                    else {
-                        ACLMessage response = msg.createReply();
-                        response.setPerformative(ACLMessage.INFORM);
-                        response.setContent("0");
-                        this.agent.send(response);
-
-                        System.out.println("Already used (from: " + msg.getSender().getLocalName() + ") " + this.agent.getLocalName());
+    private void Send() {
+        double random;
+        boolean missed = false;
+        ACLMessage msg = new ACLMessage(ACLMessage.INFORM);
+        for (Integer neighbor : agent.AgentData.neighbors) {
+            switch (neighbor) {
+                // in case when the neighbor node are 2 and 3
+                case 2:
+                    random = Math.random();
+                    if (random > agent.AgentData.networkConfiguration.probability) {
+                        missed = true;
                     }
                     break;
+                case 3:
+                    random = Math.random();
+                    if (random < agent.AgentData.networkConfiguration.probability) {
+                        try {
+                            TimeUnit.MILLISECONDS.sleep((int) (Math.random() * agent.AgentData.networkConfiguration.maxDelay));
+                        } catch (InterruptedException e) {
+                            System.out.println("Interrupted exception");
+                        }
+                    }
+                    break;
+            }
+            if (missed) {
+                missed = false;
+                continue;
+            }
+
+            msg.addReceiver(new AID(neighbor.toString(), AID.ISLOCALNAME));
+        }
+        double valueWithNoise = agent.AgentData.value + (Math.random() * 0.2 - 0.1);
+        msg.setContent(String.valueOf(valueWithNoise));
+        agent.send(msg);
+
+        System.out.println(tick + ") " + "Agent:" + agent.getAID().getLocalName() + " has sent everybody his value ");
+    }
+
+    private void Receive() {
+        double result = 0;
+        HashSet<String> used = new HashSet<>();
+        double agentValue = agent.AgentData.value;
+        while ((agent.receive()) != null) {
+            ACLMessage msg = agent.receive();
+            if (msg != null) {
+                if (used.isEmpty() || !used.contains(msg.getSender().getLocalName())) {
+                    double receivedValue = Double.parseDouble(msg.getContent());
+                    System.out.println(tick + ") " + "Agent:" + agent.getAID().getLocalName() + " Received " + receivedValue);
+
+                    result += receivedValue - agentValue;
+                    used.add(msg.getSender().getLocalName());
                 }
-                case ACLMessage.INFORM: {
-
-                    this.agent.ReceivedMessagesCount++;
-                    this.agent.Accumulator += Integer.parseInt(msg.getContent());
-                    System.out.println("Rcv " + msg.getSender().getLocalName() + " -> " + this.agent.getLocalName() + " (s: " + this.agent.SentMessagesCount + ", r: " + this.agent.ReceivedMessagesCount + ") value: " + msg.getContent());
-
-                    if (this.agent.ReceivedMessagesCount == this.agent.SentMessagesCount) {
-
-                        int sum = this.agent.Accumulator + this.agent.AgentData.value;
-
-                        if (this.agent.AgentData.isInitialAgent) {
-                            double mean = (double)sum / (double)this.agent.AgentData.numberOfNodes;
-                            System.out.println("================= REPORT =================");
-                            System.out.println("Sum of all nodes: " + sum);
-                            System.out.println("Number of nodes: " + this.agent.AgentData.numberOfNodes);
-                            System.out.println("Arithmetic mean of nodes: " + mean);
-                        }
-                        else {
-                            ACLMessage response = new ACLMessage(ACLMessage.INFORM);
-                            System.out.println("To the agent " + this.agent.getLocalName() + " returned all messages. requester: " + this.agent.RequesterName + "; result: " + Integer.toString(sum));
-                            response.setContent(Integer.toString(sum));
-                            response.addReceiver(new AID(this.agent.RequesterName, AID.ISLOCALNAME));
-                            this.agent.send(response);
-                        }
+                else{
+                    if (used.size() == agent.AgentData.neighbors.length){
+                        break;
                     }
-                    break;
                 }
             }
         }
+        agent.AgentData.value = agentValue + agent.AgentData.networkConfiguration.alpha * result;
+
+        if (tick >= this.agent.networkConfiguration.maxNumberTicks) {
+            Kill();
+        }
+    }
+
+    private void Kill() {
+        String currentAgentName = agent.getAID().getLocalName();
+
+        DecimalFormat formatter = new DecimalFormat("#.######");
+        System.out.println("================= REPORT =================");
+        System.out.println("Current tick: " + tick);
+        System.out.println("Current agent: " + currentAgentName);
+        System.out.println("Calculated average: " + formatter.format(agent.AgentData.value));
+
+        jade.wrapper.AgentContainer container = agent.getContainerController();
+
+        agent.doDelete();
+
+        new Thread(() -> {
+            try {
+                container.kill();
+            }
+            catch (StaleProxyException ignored) {
+            }
+        }).start();
     }
 }
