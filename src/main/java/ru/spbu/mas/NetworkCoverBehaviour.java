@@ -9,7 +9,7 @@ import java.util.HashSet;
 import java.util.concurrent.TimeUnit;
 
 public class NetworkCoverBehaviour extends TickerBehaviour {
-    private int tick = 0;
+    private int tick;
     private State state = State.SEND;
     private NetworkAgent agent;
 
@@ -17,11 +17,11 @@ public class NetworkCoverBehaviour extends TickerBehaviour {
         super(agent, TimeUnit.SECONDS.toMillis(1));
         this.setFixedPeriod(true);
         this.agent = agent;
+        this.tick = 0;
     }
 
     @Override
-    public void onTick()
-    {
+    public void onTick() {
         tick++;
         switch (state) {
             case SEND:
